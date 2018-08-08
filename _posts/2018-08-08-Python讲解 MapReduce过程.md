@@ -67,18 +67,61 @@ ubuntu list centos deepin
 5. 将数据分发到对应的reduce服务器上，大数据量会对IO性能有影响，因此这里可以进行压缩，在reduce服务器端进行解压缩操作，能够减小传输的数据量，提升IO性能。
 6. reduce根据得到的数据进行reduce操作，并将结果进行存储。
 
-整个过程采用hadoop-streaming.jar进行任务提交，可以通过各种参数进行制定，这里只写一个最简单的版本：
+整个过程采用hadoop-streaming.jar进行任务提交，可以通过各种参数进行制定，这里只写一个最简单的版本(注意运行之前output目录是不应该存在的，否则会报错，可以事先将output路径删除一次)：
 ```
 hadoop jar hadoop-streaming.jar \
 -D mapred.job.name=python_mapred_job \
 -input /input/hello.txt \
 -output /output \
--mapper map.py \
--reducer reduce.py \
+-mapper "python map.py" \
+-reducer "python reduce.py" \
+-jobconf "mapred.reduce.tasks=3"
 -file map.py \
 -file reduce.py
 ```
--file 是为了将map.py和reduce.py代码分发到各个服务器上进行执行
+
+### 文件上传与分发
+* -file 上传小数据量的文件
+* -cacheFile 分发大数据量的文件
+* -CacheArchive 分发文件目录（用法与-cacheFile相同）
+
+-file 是为了将map.py和reduce.py代码分发到各个服务器上进行执行，也可以分发小数据量的配置文件、白名单等
+
+如果数据量较大（如字典文件等），且存放到HDFS上，希望在计算时在每个计算节点上将该文件当做本地文件使用，可以使用-cacheFile
+
+hdfs://host:port/path/to/file#linkname 选项在计算节点缓存文件，Streaming程序通过./linkname访问该文件。  
+如：  
+`-CacheFile "hdfs://master:9000/cacheFile_dir/white_list.txt#aliasName"`
+然后在mapper中使用别名进行文件访问:  
+`-mapper "python map.py aliasName"` 
+
+### 输出数据压缩
+
+* 输出数据量较大时，可以使用Hadoop提供的压缩机制对数据压缩，减少网络传输带宽和存储的消耗
+* 可以对map的输出进行压缩（对中间结果进行压缩）
+* 可以对reduce的输出进行压缩（对最终结果进行压缩）
+* 可以指定是否压缩以及采用哪种压缩方式
+* 对map的压缩主要是为了减少shuffle过程中的网络传输数据量
+* 对reduce的结果压缩主要是为了减少输出结果占用的HDFS存储
+* 
+
+### 配置参数介绍  (-jobconf)
+
+* mapred.job.name 作业名
+* mapred.job.priority 作业优先级
+* mapred.job.map.capacity 最多同时运行map任务数
+* mapred.job.reduce.capacity 最多同时运行reduce任务数
+* mapred.task.timeout 任务没有响应的最大时间
+* mapred.compress.map.output map输出是否压缩
+* mapred.map.output.compression.codec map输出的压缩方式
+* mapred.output.compress reduce输出是否压缩
+* mapred.output.compression.codec reduce输出压缩方式
+* stream.map.output.field.separator map输出分隔符
+* stream.num.map.output.key.fields 指定map task输出记录中key所占的域数目
+* num.key.fields.for.partition 指定对key分出来的前几部分做partition而不是整个key
 
 **********************************************************************
 粗浅的理解，如果中间有什么理解错误的话，请多多指教！！！
+
+
+
